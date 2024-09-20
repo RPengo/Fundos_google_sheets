@@ -1,1 +1,8 @@
-steps:  - name: 'gcr.io/cloud-builders/docker'    args: ['build', '-t', 'gcr.io/projeto-python-435619/my-flask-app', '.']  - name: 'gcr.io/cloud-builders/docker'    args: ['push', 'gcr.io/projeto-python-435619/my-flask-app']images:  - 'gcr.io/projeto-python-435619/my-flask-app'
+steps:  
+  - name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'gcr.io/projeto-python-435619/my-flask-app', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'gcr.io/projeto-python-435619/my-flask-app']
+
+images:
+  - 'gcr.io/projeto-python-435619/my-flask-app'
