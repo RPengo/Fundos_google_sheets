@@ -118,4 +118,6 @@ if __name__ == "__main__":
 
 # Testando o gatilho do Cloud Build
 # pengo teste
+#teste 02
+
 
