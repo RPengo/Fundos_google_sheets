@@ -12,14 +12,15 @@ app = Flask(__name__)
 
 @app.route("/")
 def update_spreadsheet():
-    # Substitua o conteúdo do arquivo JSON por uma string no código
-    json_creds = os.environ.get("GOOGLE_CREDENTIALS")
-    creds_dict = json.loads(json_creds)
+    try:
+        # Substitua o conteúdo do arquivo JSON por uma string no código
+        json_creds = os.environ.get("GOOGLE_CREDENTIALS")
+        creds_dict = json.loads(json_creds)
 
-    # Autenticação usando as credenciais embutidas
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(creds)
+        # Autenticação usando as credenciais embutidas
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
 
     # Acesse a planilha
     spreadsheet = client.open('Dados Fundos')
@@ -111,18 +112,7 @@ def update_spreadsheet():
     # Atualizar a planilha com os dados mais recentes
     worksheet.update('A1', [novos_dados_df.columns.tolist()] + dados_planilha_final)
 
-    return "Dados atualizados na planilha com sucesso!"
-
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=8080)
-
-# Testando o gatilho do Cloud Build
-# pengo teste
-# teste três
-#teste 02
-#teste 04
-#cinco
-#seis
-#seis
-#sete
-#oito
+        return "Dados atualizados na planilha com sucesso!"
+    
+    except Exception as e:
+        return f"Ocorreu um erro: {str(e)}"
