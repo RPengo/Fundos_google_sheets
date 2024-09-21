@@ -6,3 +6,6 @@ steps:
 
 images:
   - 'gcr.io/projeto-python-435619/my-flask-app'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
