@@ -1,4 +1,4 @@
-# Use a imagem base do Python
+# Use a imagem base do Pythonk
 FROM python:3.9-slim
 
 # Defina o diretório de trabalho
