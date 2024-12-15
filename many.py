@@ -22,7 +22,6 @@ def baixar_e_processar_dados(ano, mes):
             arquivo_zip = zipfile.ZipFile(f"inf_diario_fi_{ano}{mes}.zip")
             dados_fundos = pd.read_csv(arquivo_zip.open(arquivo_zip.namelist()[0]), sep=";", encoding='ISO-8859-1')
 
-            # Ajuste de cabeçalhos para dados_fundos
             dados_fundos.rename(columns={
                 "CNPJ_FUNDO_CLASSE": "CNPJ_FUNDO",
                 "VL_QUOTA": "VL_QUOTA",
@@ -36,16 +35,24 @@ def baixar_e_processar_dados(ano, mes):
             )
             dados_cadastro = dados_cadastro[['CNPJ_FUNDO', 'DENOM_SOCIAL']].drop_duplicates()
 
-            # Ajuste de colunas e merge
             base_final = pd.merge(dados_fundos, dados_cadastro, how="left", left_on="CNPJ_FUNDO", right_on="CNPJ_FUNDO")
             base_final = base_final[['CNPJ_FUNDO', 'DENOM_SOCIAL', 'DT_COMPTC', 'VL_QUOTA', 'VL_PATRIM_LIQ', 'NR_COTST']]
 
             return base_final
         else:
-            return pd.DataFrame()  # Retorna DataFrame vazio se não conseguir baixar o arquivo
+            return pd.DataFrame()
     except Exception as e:
         print(f"Erro ao baixar ou processar os dados: {str(e)}")
         return pd.DataFrame()
+
+def verificar_faltantes(planilha, fundos_especificos):
+    try:
+        cnpjs_atualizados = [row[1] for row in planilha.get_all_values()[1:]]  # Coluna B: CNPJs
+        cnpjs_faltantes = [cnpj for cnpj in fundos_especificos if cnpj not in cnpjs_atualizados]
+        return cnpjs_faltantes
+    except Exception as e:
+        print(f"Erro ao verificar fundos faltantes: {str(e)}")
+        return fundos_especificos  # Retorna todos os CNPJs se der erro
 
 @app.route("/")
 def update_spreadsheet():
@@ -59,21 +66,6 @@ def update_spreadsheet():
 
         spreadsheet = client.open('Dados Fundos')
         worksheet = spreadsheet.worksheet('Dados')
-
-        existing_data = worksheet.get_all_values()
-
-        if existing_data:
-            headers = existing_data[0]
-            existing_df = pd.DataFrame(existing_data[1:], columns=headers)
-            existing_df['Data da Cota'] = pd.to_datetime(existing_df['Data da Cota'], format='%d/%m/%Y', errors='coerce')
-        else:
-            existing_df = pd.DataFrame(columns=['Nome do Fundo', 'CNPJ', 'Valor da Cota', 'Data da Cota'])
-
-        hoje = datetime.today()
-        ano_atual = hoje.strftime('%Y')
-        mes_atual = hoje.strftime('%m')
-
-        base_atual = baixar_e_processar_dados(ano_atual, mes_atual)
 
         fundos_especificos = [
             "26.673.556/0001-32",
@@ -103,39 +95,39 @@ def update_spreadsheet():
             "10.843.445/0001-97",
         ]
 
-        dados_planilha = []
-        for cnpj in fundos_especificos:
-            fundo = base_atual[base_atual['CNPJ_FUNDO'] == cnpj]
+        tentativas = 0
+        max_tentativas = 5
+        cnpjs_faltantes = fundos_especificos
 
-            if fundo.empty:
-                mes_anterior = (hoje - timedelta(days=30)).strftime('%m')
-                ano_anterior = (hoje - timedelta(days=30)).strftime('%Y')
-                base_anterior = baixar_e_processar_dados(ano_anterior, mes_anterior)
-                fundo = base_anterior[base_anterior['CNPJ_FUNDO'] == cnpj]
+        while cnpjs_faltantes and tentativas < max_tentativas:
+            print(f"Tentativa {tentativas + 1}: Processando {len(cnpjs_faltantes)} fundos restantes.")
+            hoje = datetime.today()
+            ano = hoje.strftime('%Y')
+            mes = hoje.strftime('%m')
 
-            if not fundo.empty:
-                ultima_data = fundo['DT_COMPTC'].max()
-                fundo_ultimo_dia = fundo[fundo['DT_COMPTC'] == ultima_data]
-                valor_cota_atual = fundo_ultimo_dia['VL_QUOTA'].iloc[-1]
-                nome_fundo = fundo_ultimo_dia['DENOM_SOCIAL'].iloc[0]
-                data_cota = pd.to_datetime(ultima_data).strftime('%d/%m/%Y')
+            base_dados = baixar_e_processar_dados(ano, mes)
+            dados_planilha = []
 
-                fundo_existente = existing_df[existing_df['CNPJ'] == cnpj]
+            for cnpj in cnpjs_faltantes:
+                fundo = base_dados[base_dados['CNPJ_FUNDO'] == cnpj]
+                if not fundo.empty:
+                    ultima_data = fundo['DT_COMPTC'].max()
+                    fundo_ultimo_dia = fundo[fundo['DT_COMPTC'] == ultima_data]
+                    nome_fundo = fundo_ultimo_dia['DENOM_SOCIAL'].iloc[0]
+                    valor_cota = fundo_ultimo_dia['VL_QUOTA'].iloc[0]
+                    data_cota = pd.to_datetime(ultima_data).strftime('%d/%m/%Y')
+                    dados_planilha.append([nome_fundo, cnpj, f"R$ {valor_cota:.8f}".replace('.', ','), data_cota])
 
-                if not fundo_existente.empty:
-                    data_existente = fundo_existente['Data da Cota'].max()
-                    if pd.to_datetime(data_cota, format='%d/%m/%Y') > data_existente:
-                        dados_planilha.append([nome_fundo, cnpj, f"R$ {valor_cota_atual:.8f}".replace('.', ','), data_cota])
-                else:
-                    dados_planilha.append([nome_fundo, cnpj, f"R$ {valor_cota_atual:.8f}".replace('.', ','), data_cota])
-            else:
-                dados_planilha.append(["Fundo não encontrado", cnpj, "N/A", "N/A"])
+            if dados_planilha:
+                novos_dados_df = pd.DataFrame(dados_planilha, columns=['Nome do Fundo', 'CNPJ', 'Valor da Cota', 'Data da Cota'])
+                worksheet.update('A1', [novos_dados_df.columns.tolist()] + novos_dados_df.fillna('').values.tolist())
 
-        novos_dados_df = pd.DataFrame(dados_planilha, columns=['Nome do Fundo', 'CNPJ', 'Valor da Cota', 'Data da Cota'])
-        worksheet.clear()
-        worksheet.update('A1', [novos_dados_df.columns.tolist()] + novos_dados_df.fillna('').values.tolist())
+            cnpjs_faltantes = verificar_faltantes(worksheet, fundos_especificos)
+            tentativas += 1
 
-        return "Dados atualizados na planilha com sucesso!"
+        if cnpjs_faltantes:
+            return f"Não foi possível atualizar todos os fundos. Faltantes: {', '.join(cnpjs_faltantes)}"
+        return "Todos os fundos foram atualizados com sucesso!"
     except Exception as e:
         return f"Ocorreu um erro: {str(e)}"
 
