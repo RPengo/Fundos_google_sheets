@@ -32,7 +32,6 @@ def baixar_e_processar_dados(ano, mes):
                 "DT_COMPTC": "DT_COMPTC"
             }, inplace=True)
 
-            # Garante que a coluna de subclasse existe
             if 'ID_SUBCLASSE' not in dados_fundos.columns:
                 dados_fundos['ID_SUBCLASSE'] = ''
             dados_fundos['ID_SUBCLASSE'] = dados_fundos['ID_SUBCLASSE'].fillna('').astype(str)
@@ -62,7 +61,7 @@ def filtrar_fundos_interesse(df, fundos_interesse):
     for fundo in fundos_interesse:
         cnpj = fundo['CNPJ_FUNDO']
         subclasse = fundo['ID_SUBCLASSE']
-        if subclasse == '':
+        if not subclasse:
             mascara |= (df['CNPJ_FUNDO'] == cnpj)
         else:
             mascara |= (df['CNPJ_FUNDO'] == cnpj) & (df['ID_SUBCLASSE'] == subclasse)
@@ -84,9 +83,7 @@ def buscar_dados_mais_recentes(fundos_interesse, max_meses=2):
 def verificar_faltantes(planilha, fundos_interesse):
     try:
         planilha_values = planilha.get_all_values()
-        cnpjs_atualizados = [row[1] for row in planilha_values[1:]]  # Coluna B: CNPJs
-
-        # Adiciona também o valor da subclasse na verificação
+        cnpjs_atualizados = [row[1] for row in planilha_values[1:]]
         subclasses_atualizadas = [row[2] if len(row) > 2 else '' for row in planilha_values[1:]]
         faltantes = []
         for fundo in fundos_interesse:
@@ -121,7 +118,7 @@ def update_spreadsheet():
         fundos_sheet = spreadsheet.worksheet('Fundos')
         fundos_values = fundos_sheet.get_all_values()
         fundos_interesse = []
-        for row in fundos_values[1:]:  # pula o header
+        for row in fundos_values[1:]:
             if len(row) >= 2 and row[1].strip():
                 cnpj = row[1].strip()
                 subclasse = row[2].strip() if len(row) > 2 else ''
@@ -139,10 +136,13 @@ def update_spreadsheet():
 
             for fundo in faltantes:
                 try:
-                    filtro = (
-                        (base_dados['CNPJ_FUNDO'] == fundo['CNPJ_FUNDO']) &
-                        (base_dados['ID_SUBCLASSE'] == (fundo['ID_SUBCLASSE'] if fundo['ID_SUBCLASSE'] else ''))
-                    )
+                    if fundo['ID_SUBCLASSE']:
+                        filtro = (
+                            (base_dados['CNPJ_FUNDO'] == fundo['CNPJ_FUNDO']) &
+                            (base_dados['ID_SUBCLASSE'] == fundo['ID_SUBCLASSE'])
+                        )
+                    else:
+                        filtro = (base_dados['CNPJ_FUNDO'] == fundo['CNPJ_FUNDO'])
                     fundo_df = base_dados[filtro]
                     if not fundo_df.empty:
                         ultima_data = fundo_df['DT_COMPTC'].max()
@@ -174,7 +174,6 @@ def update_spreadsheet():
             falhas_data = [[fundo['CNPJ_FUNDO'], fundo['ID_SUBCLASSE']] for fundo in faltantes]
             aba_falhas.update('A1', [['CNPJ não encontrado', 'ID_SUBCLASSE']] + falhas_data)
 
-            # ---------- CORRIGIDO: NENHUM F-STRING ANINHADO -------------
             faltantes_list = []
             for f in faltantes:
                 if f['ID_SUBCLASSE']:
@@ -182,12 +181,11 @@ def update_spreadsheet():
                 else:
                     faltantes_list.append(f["CNPJ_FUNDO"])
             return "Não foi possível atualizar todos os fundos. Faltantes: " + ", ".join(faltantes_list)
-            # -----------------------------------------------------------
 
         return "Todos os fundos foram atualizados com sucesso!"
     except Exception as e:
         return f"Ocorreu um erro: {str(e)}"
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))  # Certifique-se de usar 8080 no Cloud Run!
+    port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
