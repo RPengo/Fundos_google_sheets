@@ -174,12 +174,20 @@ def update_spreadsheet():
             falhas_data = [[fundo['CNPJ_FUNDO'], fundo['ID_SUBCLASSE']] for fundo in faltantes]
             aba_falhas.update('A1', [['CNPJ não encontrado', 'ID_SUBCLASSE']] + falhas_data)
 
-            return f"Não foi possível atualizar todos os fundos. Faltantes: {', '.join([f['CNPJ_FUNDO'] + (f' (subclasse {f['ID_SUBCLASSE']})' if f['ID_SUBCLASSE'] else '') for f in faltantes])}"
+            # ---------- CORRIGIDO: NENHUM F-STRING ANINHADO -------------
+            faltantes_list = []
+            for f in faltantes:
+                if f['ID_SUBCLASSE']:
+                    faltantes_list.append(f"{f['CNPJ_FUNDO']} (subclasse {f['ID_SUBCLASSE']})")
+                else:
+                    faltantes_list.append(f["CNPJ_FUNDO"])
+            return "Não foi possível atualizar todos os fundos. Faltantes: " + ", ".join(faltantes_list)
+            # -----------------------------------------------------------
 
         return "Todos os fundos foram atualizados com sucesso!"
     except Exception as e:
         return f"Ocorreu um erro: {str(e)}"
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8080))  # Certifique-se de usar 8080 no Cloud Run!
     app.run(host="0.0.0.0", port=port)
