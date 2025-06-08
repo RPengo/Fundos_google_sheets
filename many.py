@@ -4,7 +4,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import requests
 import zipfile
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
 import os
 import time
@@ -53,31 +53,27 @@ def baixar_e_processar_dados(ano, mes):
         print(f"Erro ao baixar ou processar os dados: {str(e)}")
         return pd.DataFrame()
 
-def buscar_dados_mais_recentes(fundos_info, max_meses=2):
+def buscar_ultima_cota_fundo(cnpj, subclasse='', max_anos=2):
     hoje = datetime.today()
-    meses = [(hoje - timedelta(days=30 * i)).strftime('%Y%m') for i in range(max_meses)]
+    ano_atual = hoje.year
+    mes_atual = hoje.month
 
-    df_completo = pd.DataFrame()
-    for ym in meses:
-        ano, mes = ym[:4], ym[4:]
-        df_mes = baixar_e_processar_dados(ano, mes)
-        df_completo = pd.concat([df_completo, df_mes], ignore_index=True)
-
-    df_completo['ID_SUBCLASSE'] = df_completo['ID_SUBCLASSE'].fillna('').astype(str)
-    df_completo.sort_values("DT_COMPTC", ascending=False, inplace=True)
-
-    # Filtra os fundos com e sem subclasse
-    todos_filtrados = pd.DataFrame()
-    for fundo in fundos_info:
-        cnpj = fundo['CNPJ']
-        subclasse = fundo['SUBCLASSE']
-        if subclasse:
-            filtrado = df_completo[(df_completo['CNPJ_FUNDO'] == cnpj) & (df_completo['ID_SUBCLASSE'] == subclasse)]
-        else:
-            filtrado = df_completo[df_completo['CNPJ_FUNDO'] == cnpj]
-        todos_filtrados = pd.concat([todos_filtrados, filtrado], ignore_index=True)
-
-    return todos_filtrados
+    for ano in range(ano_atual, ano_atual - max_anos, -1):
+        mes_final = 12 if ano < ano_atual else mes_atual
+        for mes in range(mes_final, 0, -1):
+            mes_str = str(mes).zfill(2)
+            print(f"Buscando {cnpj} {subclasse} em {ano}{mes_str} ...")
+            df_mes = baixar_e_processar_dados(str(ano), mes_str)
+            if not df_mes.empty:
+                if subclasse:
+                    fundo_df = df_mes[(df_mes['CNPJ_FUNDO'] == cnpj) & (df_mes['ID_SUBCLASSE'] == subclasse)]
+                else:
+                    fundo_df = df_mes[df_mes['CNPJ_FUNDO'] == cnpj]
+                if not fundo_df.empty:
+                    fundo_df['DT_COMPTC'] = pd.to_datetime(fundo_df['DT_COMPTC'], errors='coerce')
+                    fundo_df = fundo_df.sort_values('DT_COMPTC', ascending=False)
+                    return fundo_df.iloc[0]
+    return None
 
 def verificar_faltantes(planilha, fundos_info):
     try:
@@ -119,28 +115,20 @@ def update_spreadsheet():
         while faltantes and tentativas < max_tentativas:
             print(f"Tentativa {tentativas + 1}: Processando {len(faltantes)} fundos restantes.")
 
-            base_dados = buscar_dados_mais_recentes(faltantes)
             dados_planilha = []
 
             for fundo in faltantes:
                 try:
                     cnpj = fundo['CNPJ']
                     subclasse = fundo['SUBCLASSE']
-                    if subclasse:
-                        fundo_df = base_dados[(base_dados['CNPJ_FUNDO'] == cnpj) & (base_dados['ID_SUBCLASSE'] == subclasse)]
-                    else:
-                        fundo_df = base_dados[base_dados['CNPJ_FUNDO'] == cnpj]
-
-                    if not fundo_df.empty:
-                        ultima_data = fundo_df['DT_COMPTC'].max()
-                        fundo_ultimo_dia = fundo_df[fundo_df['DT_COMPTC'] == ultima_data]
-                        if not fundo_ultimo_dia.empty:
-                            nome_fundo = fundo_ultimo_dia['DENOM_SOCIAL'].iloc[0]
-                            valor_cota = fundo_ultimo_dia['VL_QUOTA'].iloc[0]
-                            data_cota = pd.to_datetime(ultima_data).strftime('%d/%m/%Y')
-                            dados_planilha.append([
-                                nome_fundo, cnpj, subclasse, f"R$ {valor_cota:.8f}".replace('.', ','), data_cota
-                            ])
+                    registro = buscar_ultima_cota_fundo(cnpj, subclasse, max_anos=2)
+                    if registro is not None:
+                        nome_fundo = registro['DENOM_SOCIAL']
+                        valor_cota = registro['VL_QUOTA']
+                        data_cota = pd.to_datetime(registro['DT_COMPTC']).strftime('%d/%m/%Y')
+                        dados_planilha.append([
+                            nome_fundo, cnpj, subclasse, f"R$ {valor_cota:.8f}".replace('.', ','), data_cota
+                        ])
                 except Exception as e:
                     print(f"Erro ao processar fundo {fundo}: {e}")
 
